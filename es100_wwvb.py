@@ -629,32 +629,24 @@ class es100_wwvb:
                         # when in tracking mode,
                         # only accept timestamps which are within +/- 250 milliseconds from expected ts.
                         #
-                        # TODO(pgenera): added 19s, but this is very consistently 19s. It can be +/-4s according to the datasheet and still be valid.
-                        if rx_timestamp_mod >= 18.750 and rx_timestamp_mod < 19.250:
-                                if rx_timestamp_mod < 19:
-                                        wwvb_time_secs = int(rx_timestamp + 1)
+                        # ts can be :55 + ~24.5, +/-4s according to the datasheet and still be valid.
+                        # :19.5 +/- 4 = :15 to :23:
+                        if rx_timestamp_mod >= 15 and rx_timestamp_mod <= 24:
+                                if rx_timestamp_frac > .75 or rx_timestamp_frac < .25:
+                                        if rx_timestamp_frac > .75:
+                                                wwvb_time_secs = int(rx_timestamp + 1)
+                                        else:
+                                                wwvb_time_secds = int(rx_timestamp)
+                                        txt = "read_rx_wwvb_device: accept timestamp for :{} second offset"
+                                        print txt.format(int(rx_timestamp_mod))
                                 else:
-                                        wwvb_time_secs = int(rx_timestamp)
-                                print "read_rx_wwvb_device: accept timestamp for :19 second offset"
-                        elif rx_timestamp_mod >= 19.750 and rx_timestamp_mod < 20.250:
-                                if rx_timestamp_mod < 20:
-                                        wwvb_time_secs = int(rx_timestamp + 1)
-                                else:
-                                        wwvb_time_secs = int(rx_timestamp)
-                                print "read_rx_wwvb_device: accept timestamp for :20 second offset"
-                        elif rx_timestamp_mod >= 20.750 and rx_timestamp_mod < 21.250:
-                                if rx_timestamp_mod < 21:
-                                        wwvb_time_secs = int(rx_timestamp + 1)
-                                else:
-                                        wwvb_time_secs = int(rx_timestamp)
-                                print "read_rx_wwvb_device: accept timestamp for :21 second offset"
-                        else:
-                                print "read_rx_wwvb_device: tracking sample offset out of range"
-                                print "read_rx_wwvb_device: clock offset in tracking mode exceeds 250 ms, forcing full RX"
-                                self.disable_wwvb_device()
-                                self.wwvb_emit_clockstats(es100_wwvb.RX_STATUS_WWVB_T_STAMP_OORANGE, rx_ant, rx_timestamp)
-                                self.force_full_rx = True
-                                return es100_wwvb.RX_STATUS_WWVB_T_STAMP_OORANGE
+                                        # out of +/-250ms range
+                                        print "read_rx_wwvb_device: tracking sample offset out of range"
+                                        print "read_rx_wwvb_device: clock offset in tracking mode exceeds 250 ms, forcing full RX"
+                                        self.disable_wwvb_device()
+                                        self.wwvb_emit_clockstats(es100_wwvb.RX_STATUS_WWVB_T_STAMP_OORANGE, rx_ant, rx_timestamp)
+                                        self.force_full_rx = True
+                                        return es100_wwvb.RX_STATUS_WWVB_T_STAMP_OORANGE
                 else:
                         rx_mode = "FULL"
                         print "read_rx_wwvb_device: status0 reg: processing normal RX mode"
