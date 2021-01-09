@@ -636,7 +636,7 @@ class es100_wwvb:
                                         if rx_timestamp_frac > .75:
                                                 wwvb_time_secs = int(rx_timestamp + 1)
                                         else:
-                                                wwvb_time_secds = int(rx_timestamp)
+                                                wwvb_time_secs = int(rx_timestamp)
                                         txt = "read_rx_wwvb_device: accept timestamp for :{} second offset"
                                         print txt.format(int(rx_timestamp_mod))
                                 else:
