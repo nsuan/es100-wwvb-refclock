@@ -84,7 +84,7 @@ void update_shm(const struct timespec *pps_ts, const struct timespec *local_ts)
 {
 	struct shm_time *shm = get_shmseg();
 
-	printf("update_shm_ones_hot: shm->valid = %d, shm->count = %d, shm->nsamples = %d\n", shm->valid, shm->count, shm->nsamples);
+	printf("update_shm_one_shot: shm->valid = %d, shm->count = %d, shm->nsamples = %d\n", shm->valid, shm->count, shm->nsamples);
 	shm->valid = 0;
 	atomic_thread_fence(memory_order_seq_cst);
 	shm->mode = 1;
