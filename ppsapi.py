@@ -34,7 +34,7 @@ class ppsapi:
         def __init__(self, pps_devname, pps_mode):
                 self.pps_devname = pps_devname
                 self.pps_mode = pps_mode
-                print "ppsapi.__init__: " + self.pps_devname + ", " + "{0:0x}".format(self.pps_mode)
+                print("ppsapi.__init__: " + self.pps_devname + ", " + "{0:0x}".format(self.pps_mode))
         def __time_pps_fetch(self, mode):
                 if mode == ppsapi.PPS_CAPTUREASSERT:
                         pps_dev = "/sys/devices/virtual/pps/" + self.pps_devname + "/assert"
