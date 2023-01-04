@@ -1,4 +1,4 @@
-#!/usr/bin/python -u
+#!/usr/bin/python3 -u
 
 #
 # Simple python code to test ES100 WWVB receiver.
