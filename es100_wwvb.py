@@ -64,7 +64,7 @@ class es100_wwvb:
         GPIO_DEV_ENABLE             = 7         # device ENABLE pin connected to physical pin 7
         GPIO_DEV_IRQ                = 11        # device IRQ connected to physical pin 11
         GPIO_DEV_IRQ_PPS_DEVICE     = "pps0"    # name of pps device
-        KILOMETERS_FROM_FTCOLLINS_CO= 1568      # great circle distance from Fort Collins, Colorado, kilometers
+        #KILOMETERS_FROM_FTCOLLINS_CO= 1568      # great circle distance from Fort Collins, Colorado, kilometers
         #
         # from https://ieeexplore.ieee.org/document/1701081
         #
@@ -152,13 +152,16 @@ class es100_wwvb:
                         "IRQ_STATUS_LOW",
                         "T_STAMP_OORANGE"
         )
-        def __init__(self, allow_tracking_mode = False, force_rx_params = 0):
+        def __init__(self, allow_tracking_mode = False, force_rx_params = 0, distance_from_ftcollins_co=1568, debug=False):
                 self.ALLOW_RX_TRACKING_MODE = allow_tracking_mode
-                print("__init__: self.ALLOW_RX_TRACKING_MODE = " + str(self.ALLOW_RX_TRACKING_MODE))
+                self.KILOMETERS_FROM_FTCOLLINS_CO = distance_from_ftcollins_co
+                self.DEBUG_PRINT = debug
+
+                self.debug_log("__init__: self.ALLOW_RX_TRACKING_MODE = " + str(self.ALLOW_RX_TRACKING_MODE))
                 GPIO.setwarnings(False)
-                print("__init__: opening i2c bus channel = " + str(es100_wwvb.I2C_DEV_CHANNEL))
+                self.debug_log("__init__: opening i2c bus channel = " + str(es100_wwvb.I2C_DEV_CHANNEL))
                 self.smbus = smbus.SMBus(es100_wwvb.I2C_DEV_CHANNEL)
-                print("__init__: smbus i2c object = " + str(self.smbus))
+                self.debug_log("__init__: smbus i2c object = " + str(self.smbus))
                 #
                 # set gpio pins
                 #
@@ -180,7 +183,7 @@ class es100_wwvb:
                 # rx params
                 #
                 self.force_rx_params = force_rx_params
-                print("__init__: self.force_rx_params = " + str(self.force_rx_params))
+                self.debug_log("__init__: self.force_rx_params = " + str(self.force_rx_params))
                 self.next_rx_params = es100_wwvb.ES100_CONTROL_START_RX_ANT1
                 #
                 # this is set to true both at the beginning. a successful full rx sets this to false,
@@ -198,7 +201,14 @@ class es100_wwvb:
                 # last full rx
                 #
                 self.last_full_rx_tstamp = 0
-                print("__init__: done")
+                self.debug_log("__init__: done")
+        def debug_log(self, message):
+                # TODO: move this into a thread 
+                if self.DEBUG_PRINT:
+                        print(message)
+        def notice_log(self, message):
+                # TODO: move this into a thread 
+                print(message)
         def make_timespec_s(self, timestamp):
                 return "{0:09.09f}".format(timestamp)
         def make_timefrac_s(self, timestamp):
@@ -231,9 +241,9 @@ class es100_wwvb:
         def check_night_time_full_rx_ftcollins(self):
                 t = time.time()
                 mjd = self.time_to_mjd(t)
-                print("check_night_time_ftcollins: " + str(t) + ": day_offset=" + str(mjd[1]) + ", t-last_full_rx=" + str(t - self.last_full_rx_tstamp) + "/" + str(es100_wwvb.NIGHT_TIME_RX_DAY_LENGTH))
+                self.debug_log("check_night_time_ftcollins: " + str(t) + ": day_offset=" + str(mjd[1]) + ", t-last_full_rx=" + str(t - self.last_full_rx_tstamp) + "/" + str(es100_wwvb.NIGHT_TIME_RX_DAY_LENGTH))
                 if mjd[1] >= es100_wwvb.NIGHT_TIME_RX_DAY_OFFSET_BEGIN and mjd[1] <= es100_wwvb.NIGHT_TIME_RX_DAY_OFFSET_END and t > (self.last_full_rx_tstamp + es100_wwvb.NIGHT_TIME_RX_DAY_LENGTH):
-                        print("check_night_time_ftcollins: set force_full_rx to True")
+                        self.debug_log("check_night_time_ftcollins: set force_full_rx to True")
                         self.force_full_rx = True
         def str0x(self, value):
                 return "0x{0:02x}".format(value)
@@ -271,16 +281,16 @@ class es100_wwvb:
                         time.sleep(0.001)
                         t = time.time() - t0
                         if t >= 0.100 and warn is False:
-                                print("gpio_wait_state_change: WARNING: still waiting for " + state_s + " state change after " + str(t) + " secs")
+                                self.debug_log("gpio_wait_state_change: WARNING: still waiting for " + state_s + " state change after " + str(t) + " secs")
                                 warn = True
                                 if t >= 0.500 and timeout is True:
-                                        print("gpio_wait_state_change: ERROR: still waiting for " + state_s + " state change after " + str(t) + " secs")
+                                        self.debug_log("gpio_wait_state_change: ERROR: still waiting for " + state_s + " state change after " + str(t) + " secs")
                                         return curr_state
                 t = time.time() - t0
                 if t > 0.002:
-                        print("gpio_wait_state_change: NOTE: " + state_s + " state change for " + pin_name + " took " + str(t) + " secs")
+                        self.debug_log("gpio_wait_state_change: NOTE: " + state_s + " state change for " + pin_name + " took " + str(t) + " secs")
                 if t >= 0.050:
-                        print("gpio_wait_state_change: WARNING: " + state_s + " state change for " + pin_name + " took " + str(t) + " secs")
+                        self.debug_log("gpio_wait_state_change: WARNING: " + state_s + " state change for " + pin_name + " took " + str(t) + " secs")
                 return new_state
         #
         # FIXME: need to do substantial cleanup of this code
@@ -288,14 +298,14 @@ class es100_wwvb:
         def enable_wwvb_device(self):
                 if GPIO.input(self.GPIO_DEV_ENABLE) != 0:
                         # FIXME: this is an error and shouldn't happen
-                        print("enable_wwvb_device: ERROR: WWVB device already enabled")
+                        self.debug_log("enable_wwvb_device: ERROR: WWVB device already enabled")
                 else:
-                        print("enable_wwvb_device: enabling WWVB device")
+                        self.debug_log("enable_wwvb_device: enabling WWVB device")
                         if GPIO.input(self.GPIO_DEV_IRQ) != 0:
                                 #
                                 # FIXME: need to handle this error
                                 #
-                                print("enable_wwvb_device: ERROR: GPIO_IRQ pin is high, but should be low --- doing deep disable")
+                                self.debug_log("enable_wwvb_device: ERROR: GPIO_IRQ pin is high, but should be low --- doing deep disable")
                                 time.sleep(4.000)
                         GPIO.output(self.GPIO_DEV_ENABLE, GPIO.HIGH)
                 self.gpio_wait_state_change(self.GPIO_DEV_IRQ, "DEV_IRQ", 0)
@@ -306,14 +316,14 @@ class es100_wwvb:
         #
         def disable_wwvb_device(self, deep_disable = False):
                  if GPIO.input(self.GPIO_DEV_ENABLE) == 0:
-                         print("disable_wwvb_device: NOTE: WWVB device already disabled")
+                         self.debug_log("disable_wwvb_device: NOTE: WWVB device already disabled")
                  else:
-                        print("disable_wwvb_device: disabling WWVB device")
+                        self.debug_log("disable_wwvb_device: disabling WWVB device")
                         GPIO.output(self.GPIO_DEV_ENABLE, GPIO.LOW)
                  if deep_disable is True:
-                        print("disable_wwvb_device: deep disable")
+                        self.debug_log("disable_wwvb_device: deep disable")
                         time.sleep(4.000)
-                        print("disable_wwvb_device: deep disable done")
+                        self.debug_log("disable_wwvb_device: deep disable done")
                  time.sleep(0.020)
                  self.gpio_wait_state_change(self.GPIO_DEV_IRQ, "DEV_IRQ", 1)
                  # probably needed for correct operation
@@ -325,7 +335,7 @@ class es100_wwvb:
                 #
                 # FIXME: check pin functions to make sure I2C/SMBUS is enabled
                 #
-                print("init_gpio_pins: setting GPIO pins for WWVB receiver")
+                self.debug_log("init_gpio_pins: setting GPIO pins for WWVB receiver")
                 GPIO.setmode(GPIO.BOARD)
                 #
                 # per datasheet, ES100 digital pins float when DEV_ENABLE is disabled,
@@ -336,20 +346,20 @@ class es100_wwvb:
                 GPIO.setup(self.GPIO_DEV_ENABLE, GPIO.OUT)
                 GPIO.output(self.GPIO_DEV_ENABLE, GPIO.LOW)
                 func = GPIO.gpio_function(self.GPIO_DEV_I2C_SCL_PIN)
-                print("init_gpio_pins: func I2C_SCL_PIN = " + str(func) + "/" + str(GPIO.I2C))
+                self.debug_log("init_gpio_pins: func I2C_SCL_PIN = " + str(func) + "/" + str(GPIO.I2C))
                 if func != GPIO.I2C:
                         #
                         # non recoverable
                         #
-                        print("init_gpio_pins: FATAL ERROR: function I2C_SCL_PIN is not GPIO.I2C")
+                        self.debug_log("init_gpio_pins: FATAL ERROR: function I2C_SCL_PIN is not GPIO.I2C")
                         exit(1)
                 func = GPIO.gpio_function(self.GPIO_DEV_I2C_SDA_PIN)
-                print("init_gpio_pins: func I2C_SDA_PIN = " + str(func) + "/" + str(GPIO.I2C))
+                self.debug_log("init_gpio_pins: func I2C_SDA_PIN = " + str(func) + "/" + str(GPIO.I2C))
                 if func != GPIO.I2C:
                         #
                         # non recoverable
                         #
-                        print("init_gpio_pins: FATAL ERROR: function I2C_SDA_PIN is not GPIO.I2C")
+                        self.debug_log("init_gpio_pins: FATAL ERROR: function I2C_SDA_PIN is not GPIO.I2C")
                         exit(1)
                 #
                 # make sure IRQ is low
@@ -357,7 +367,7 @@ class es100_wwvb:
                 time.sleep(0.500)
                 self.gpio_wait_state_change(self.GPIO_DEV_IRQ, "DEV_IRQ", 1)
         def init_wwvb_device(self):
-                print("init_wwvb_device: initializing ES100 WWVB receiver")
+                self.debug_log("init_wwvb_device: initializing ES100 WWVB receiver")
                 #
                 # set ENABLE pin to LOW to power it down
                 #
@@ -374,36 +384,36 @@ class es100_wwvb:
                 # not sure how to call an I2C read which does not specify a source address
                 #
                 es100_slave_addr_val = self.smbus.read_byte(es100_wwvb.ES100_SLAVE_ADDR)
-                print("init_wwvb_device: es100_slave_addr_val = " + self.str0x(es100_slave_addr_val))
+                self.debug_log("init_wwvb_device: es100_slave_addr_val = " + self.str0x(es100_slave_addr_val))
                 if es100_slave_addr_val != es100_wwvb.ES100_SLAVE_ADDR_VAL:
-                        print("init_wwvb_device: ERROR: invalid ES100 es100_slave_addr_val")
+                        self.debug_log("init_wwvb_device: ERROR: invalid ES100 es100_slave_addr_val")
                         return -1
                 #
                 time.sleep(0.100)
                 val = self.read_wwvb_device(es100_wwvb.ES100_DEVICE_ID_REG)
-                print("init_wwvb_device: es100_device_id = " + self.str0x(val))
+                self.debug_log("init_wwvb_device: es100_device_id = " + self.str0x(val))
                 if val != es100_wwvb.ES100_DEVICE_ID:
-                        print("init_wwvb_device: ERROR: invalid ES100 device_id")
+                        self.debug_log("init_wwvb_device: ERROR: invalid ES100 device_id")
                         return -1
                 #
                 # don't check irq_status register, as it has side effects
                 #
                 val = self.read_wwvb_device(es100_wwvb.ES100_CONTROL0_REG)
-                print("init_wwvb_device: control0 reg = " + self.str0x(val))
+                self.debug_log("init_wwvb_device: control0 reg = " + self.str0x(val))
                 if val != 0:
-                        print("init_wwvb_device: ERROR: invalid control0 reg")
+                        self.debug_log("init_wwvb_device: ERROR: invalid control0 reg")
                         return -1
                 val = self.read_wwvb_device(es100_wwvb.ES100_STATUS0_REG)
-                print("init_wwvb_device: status0 reg = " + self.str0x(val))
+                self.debug_log("init_wwvb_device: status0 reg = " + self.str0x(val))
                 if val != 0:
-                        print("init_wwvb_device: ERROR: invalid status0 reg")
+                        self.debug_log("init_wwvb_device: ERROR: invalid status0 reg")
                         return -1
                 val = GPIO.input(self.GPIO_DEV_IRQ)
-                print("init_wwvb_device: gpio_dev_irq pin = " + str(val))
+                self.debug_log("init_wwvb_device: gpio_dev_irq pin = " + str(val))
                 if val != 1:
-                        print("init_wwvb_device: ERROR: invalid gpio_dev_irq_pin")
+                        self.debug_log("init_wwvb_device: ERROR: invalid gpio_dev_irq_pin")
                         return -1
-                print("init_wwvb_device: done initializing ES100 WWVB receiver")
+                self.debug_log("init_wwvb_device: done initializing ES100 WWVB receiver")
                 return 0
         #
         # emit machine readable rx stats line
@@ -421,7 +431,7 @@ class es100_wwvb:
                 #
                 # version 1
                 #
-                print("RX_WWVB_STAT_COUNTERS,v1," + str(self.rx_stats_count) + "," + str(rx_total) + "," + rx_s)
+                self.notice_log("RX_WWVB_STAT_COUNTERS,v1," + str(self.rx_stats_count) + "," + str(rx_total) + "," + rx_s)
         #
         # machine readable line for automated parsing and analysis
         # no other text printed by this tool begins with RX_WWVB_STAT
@@ -462,7 +472,7 @@ class es100_wwvb:
                 rx_s = rx_s + rx_mode
                 # version 2 adds mjd day and second
                 # version 3 adds rx_mode - backward compat with version 2
-                print("RX_WWVB_CLOCKSTATS,v3," + rx_s)
+                self.notice_log("RX_WWVB_CLOCKSTATS,v3," + rx_s)
                 #
                 # emit stats
                 #
@@ -473,13 +483,13 @@ class es100_wwvb:
         def start_rx_wwvb_device(self, rx_params):
                 # FIXME: check input rx_params
                 if rx_params == es100_wwvb.ES100_CONTROL_START_RX_ANT1:
-                        print("start_rx_wwvb_device: WWVB receive: starting RX on antenna ANT1")
+                        self.debug_log("start_rx_wwvb_device: WWVB receive: starting RX on antenna ANT1")
                 if rx_params == es100_wwvb.ES100_CONTROL_START_RX_ANT2:
-                        print("start_rx_wwvb_device: WWVB receive: starting RX on antenna ANT2")
+                        self.debug_log("start_rx_wwvb_device: WWVB receive: starting RX on antenna ANT2")
                 if rx_params == es100_wwvb.ES100_CONTROL_START_TRACKING_RX_ANT1:
-                        print("start_rx_wwvb_device: WWVB receive: starting TRACKING RX on antenna ANT1")
+                        self.debug_log("start_rx_wwvb_device: WWVB receive: starting TRACKING RX on antenna ANT1")
                 if rx_params == es100_wwvb.ES100_CONTROL_START_TRACKING_RX_ANT2:
-                        print("start_rx_wwvb_device: WWVB receive: starting TRACKING RX on antenna ANT2")
+                        self.debug_log("start_rx_wwvb_device: WWVB receive: starting TRACKING RX on antenna ANT2")
                 self.write_wwvb_device(es100_wwvb.ES100_CONTROL0_REG, rx_params)
                 # rx_start_time = time.time()
                 # rx_start_offset = int(rx_start_time) % 60
@@ -490,11 +500,11 @@ class es100_wwvb:
         def wait_rx_wwvb_device(self, prev_pps_stamp):
                 rx_start_time = time.time()
                 rx_start_offset = int(rx_start_time) % 60
-                print("wait_rx_wwvb_device: time/offset = " + str(rx_start_time) + "/" + str(rx_start_offset))
+                self.debug_log("wait_rx_wwvb_device: time/offset = " + str(rx_start_time) + "/" + str(rx_start_offset))
                 c = 0
                 rx_time_timeout = rx_start_time + 140
                 # rx_time_print_debug = 0
-                print("wait_rx_wwvb_device: prev_pps_stamp = " + str(prev_pps_stamp))
+                self.debug_log("wait_rx_wwvb_device: prev_pps_stamp = " + str(prev_pps_stamp))
                 # print "wait_rx_wwvb_device:",
                 pps_stamp = prev_pps_stamp
                 while pps_stamp[1] == prev_pps_stamp[1]:
@@ -509,12 +519,12 @@ class es100_wwvb:
                         #         print "   " + str(rx_time_waiting) + "/" + str(rx_time_now_offset),
                         #         rx_time_print_debug = rx_time_now + 15
                         if rx_time_waiting > es100_wwvb.WWB_WAIT_RX_TIMEOUT:
-                                print("")
+                                self.debug_log("")
                                 irq_status = self.read_wwvb_device(es100_wwvb.ES100_IRQ_STATUS_REG)
                                 control0 = self.read_wwvb_device(es100_wwvb.ES100_CONTROL0_REG)
                                 status0 = self.read_wwvb_device(es100_wwvb.ES100_STATUS0_REG)
                                 gpio_irq_pin = GPIO.input(self.GPIO_DEV_IRQ)
-                                print("wait_rx_wwvb_device: TIMEOUT ERROR: status0=" + self.str0x(status0) + ", " + "irq_status=" + self.str0x(irq_status) + ": " + str(time.time() - rx_start_time))
+                                self.debug_log("wait_rx_wwvb_device: TIMEOUT ERROR: status0=" + self.str0x(status0) + ", " + "irq_status=" + self.str0x(irq_status) + ": " + str(time.time() - rx_start_time))
                                 return -1
                         time.sleep(0.010)
                         #
@@ -522,10 +532,10 @@ class es100_wwvb:
                         #
                         pps_stamp = self.pps.time_pps_fetch()['clear']
                 # print ""
-                print("wait_rx_wwvb_device: RX pps_stamp = " + str(pps_stamp))
+                self.debug_log("wait_rx_wwvb_device: RX pps_stamp = " + str(pps_stamp))
                 rx_end_time = time.time()
                 rx_end_offset = int(rx_end_time) % 60
-                print("wait_rx_wwvb_device: RX time/offset = " + str(rx_end_time) + "/" + str(rx_end_offset))
+                self.debug_log("wait_rx_wwvb_device: RX time/offset = " + str(rx_end_time) + "/" + str(rx_end_offset))
                 #print "wait_rx_wwvb_device: rx_timestamp = " + self.make_timespec_s(rx_timestamp)
                 return pps_stamp[0]
         #
@@ -541,9 +551,9 @@ class es100_wwvb:
                 irq_status = self.read_wwvb_device(es100_wwvb.ES100_IRQ_STATUS_REG)
                 control0 = self.read_wwvb_device(es100_wwvb.ES100_CONTROL0_REG)
                 status0 = self.read_wwvb_device(es100_wwvb.ES100_STATUS0_REG)
-                print("read_rx_wwvb_device: irq_status reg = " + self.str0x(irq_status))
-                print("read_rx_wwvb_device: control0 reg = " + self.str0x(control0))
-                print("read_rx_wwvb_device: status0 reg = " + self.str0x(status0))
+                self.debug_log("read_rx_wwvb_device: irq_status reg = " + self.str0x(irq_status))
+                self.debug_log("read_rx_wwvb_device: control0 reg = " + self.str0x(control0))
+                self.debug_log("read_rx_wwvb_device: status0 reg = " + self.str0x(status0))
                 #
                 # the datasheet is unclear as to when the ES100 raises DEV_IRQ back,
                 # whether it's after reading IRQ status or IRQ status and datetime/dst registers.
@@ -553,7 +563,7 @@ class es100_wwvb:
                 # waiting a little bit more is critical for correct operation
                 time.sleep(0.010)
                 if gpio_irq_pin != 1:
-                        print("read_rx_wwvb_device: ERROR: GPIO_IRQ pin is still low - should be high")
+                        self.notice_log("read_rx_wwvb_device: ERROR: GPIO_IRQ pin is still low - should be high")
                         self.disable_wwvb_device()
                         self.wwvb_emit_clockstats(es100_wwvb.RX_STATUS_WWVB_IRQ_STATUS_LOW, rx_ant, rx_timestamp)
                         return es100_wwvb.RX_STATUS_WWVB_IRQ_STATUS_LOW
@@ -562,69 +572,69 @@ class es100_wwvb:
                 # get rx_ant first, then process irq_status before status0 register
                 #
                 if (status0 & 0x2) != 0x0:
-                        print("read_rx_wwvb_device: status0 reg: RX ANTENNA 2")
+                        self.debug_log("read_rx_wwvb_device: status0 reg: RX ANTENNA 2")
                         rx_ant = 2
                 else:
-                        print("read_rx_wwvb_device: status0 reg: RX ANTENNA 1")
+                        self.debug_log("read_rx_wwvb_device: status0 reg: RX ANTENNA 1")
                         rx_ant = 1
                 #
                 # check IRQ_STATUS register first
                 #
                 if (irq_status & 0x5) == 0x1:
-                        print("read_rx_wwvb_device: irq_status reg = RX complete - OK")
+                        self.debug_log("read_rx_wwvb_device: irq_status reg = RX complete - OK")
                 else:
                         if (irq_status & 0x5) == 0x4:
                                 # NOTE: this code runs in tracking mode most of the time, so no need to let receiver retry a full rx.
                                 # control0 reg = 5
                                 # status0 reg = 0
                                 # irq_status reg = 4
-                                print("read_rx_wwvb_device: irq_status reg: RX cycle complete, but no data (receiver retrying) --- ERROR")
+                                self.notice_log("read_rx_wwvb_device: irq_status reg: RX cycle complete, but no data (receiver retrying) --- ERROR")
                                 self.disable_wwvb_device()
                                 self.wwvb_emit_clockstats(es100_wwvb.RX_STATUS_WWVB_IRQ_CYCLE_COMPL, rx_ant, rx_timestamp)
                                 return es100_wwvb.RX_STATUS_WWVB_IRQ_CYCLE_COMPL
                         else:
-                                print("read_rx_wwvb_device: irq_status reg: RESERVED BIT IS SET --- ERROR")
+                                self.notice_log("read_rx_wwvb_device: irq_status reg: RESERVED BIT IS SET --- ERROR")
                                 self.disable_wwvb_device()
                                 self.wwvb_emit_clockstats(es100_wwvb.RX_STATUS_WWVB_IRQ_STATUS_RSVD, rx_ant, rx_timestamp)
                                 return es100_wwvb.RX_STATUS_WWVB_IRQ_STATUS_RSVD
                 if (status0 & 0x4) != 0x0:
-                        print("read_rx_wwvb_device: status0 reg: RESERVED BIT IS SET --- ERROR")
+                        self.notice_log("read_rx_wwvb_device: status0 reg: RESERVED BIT IS SET --- ERROR")
                         self.disable_wwvb_device()
                         self.wwvb_emit_clockstats(es100_wwvb.RX_STATUS_WWVB_STATUS0_RSVD, rx_ant, rx_timestamp)
                         return es100_wwvb.RX_STATUS_WWVB_STATUS0_RSVD
                 if (status0 & 0x5) == 0x1:
-                        print("read_rx_wwvb_device: status0 reg: RX_OK: RX OK")
+                        self.notice_log("read_rx_wwvb_device: status0 reg: RX_OK: RX OK")
                 else:
-                        print("read_rx_wwvb_device: status0 reg: NO_RX: RX FAILED --- ERROR")
+                        self.notice_log("read_rx_wwvb_device: status0 reg: NO_RX: RX FAILED --- ERROR")
                         self.disable_wwvb_device()
                         self.wwvb_emit_clockstats(es100_wwvb.RX_STATUS_WWVB_STATUS0_NO_RX, rx_ant, rx_timestamp)
                         return es100_wwvb.RX_STATUS_WWVB_STATUS0_NO_RX
                 rx_ret = 0
                 if (status0 & 0x2) != 0x0:
-                        print("read_rx_wwvb_device: status0 reg: RX ANTENNA 2")
+                        self.debug_log("read_rx_wwvb_device: status0 reg: RX ANTENNA 2")
                         rx_ret = es100_wwvb.RX_STATUS_WWVB_RX_OK_ANT2
                 else:
-                        print("read_rx_wwvb_device: status0 reg: RX ANTENNA 1")
+                        self.debug_log("read_rx_wwvb_device: status0 reg: RX ANTENNA 1")
                         rx_ret = es100_wwvb.RX_STATUS_WWVB_RX_OK_ANT1
                 if (status0 & 0x10) != 0:
-                        print("read_rx_wwvb_device: status0 reg: LEAP second flag indicator")
+                        self.debug_log("read_rx_wwvb_device: status0 reg: LEAP second flag indicator")
                 if (status0 & 0x60) != 0:
-                        print("read_rx_wwvb_device: status0 reg: DST flags set")
+                        self.debug_log("read_rx_wwvb_device: status0 reg: DST flags set")
                 if (status0 & 0x80) != 0:
                         rx_mode = "TRACKING"
                         #
                         # FIXME: make sure we actually requested tracking mode
                         # FIXME: need to weed out bad timestamps
                         #
-                        print("read_rx_wwvb_device: status0 reg: processing TRACKING RX mode")
+                        self.debug_log("read_rx_wwvb_device: status0 reg: processing TRACKING RX mode")
                         rx_timestamp_mod = rx_timestamp % 60
                         rx_timestamp_frac = rx_timestamp - int(rx_timestamp)
                         #
                         # FIXME: need to weed out bad timestamps
                         #
-                        print("read_rx_wwvb_device: rx_timestamp = " + self.make_timespec_s(rx_timestamp))
-                        print("read_rx_wwvb_device: rx_timestamp_mod = " + self.make_timespec_s(rx_timestamp_mod))
-                        print("read_rx_wwvb_device: rx_timestamp_frac = " + self.make_timespec_s(rx_timestamp_frac))
+                        self.debug_log("read_rx_wwvb_device: rx_timestamp = " + self.make_timespec_s(rx_timestamp))
+                        self.debug_log("read_rx_wwvb_device: rx_timestamp_mod = " + self.make_timespec_s(rx_timestamp_mod))
+                        self.debug_log("read_rx_wwvb_device: rx_timestamp_frac = " + self.make_timespec_s(rx_timestamp_frac))
                         #
                         # when in tracking mode,
                         # only accept timestamps which are within +/- 250 milliseconds from expected ts.
@@ -638,18 +648,18 @@ class es100_wwvb:
                                         else:
                                                 wwvb_time_secs = int(rx_timestamp)
                                         txt = "read_rx_wwvb_device: accept timestamp for :{} second offset"
-                                        print(txt.format(int(rx_timestamp_mod)))
+                                        self.debug_log(txt.format(int(rx_timestamp_mod)))
                                 else:
                                         # out of +/-250ms range
-                                        print("read_rx_wwvb_device: tracking sample offset out of range")
-                                        print("read_rx_wwvb_device: clock offset in tracking mode exceeds 250 ms, forcing full RX")
+                                        self.debug_log("read_rx_wwvb_device: tracking sample offset out of range")
+                                        self.debug_log("read_rx_wwvb_device: clock offset in tracking mode exceeds 250 ms, forcing full RX")
                                         self.disable_wwvb_device()
                                         self.wwvb_emit_clockstats(es100_wwvb.RX_STATUS_WWVB_T_STAMP_OORANGE, rx_ant, rx_timestamp)
                                         self.force_full_rx = True
                                         return es100_wwvb.RX_STATUS_WWVB_T_STAMP_OORANGE
                 else:
                         rx_mode = "FULL"
-                        print("read_rx_wwvb_device: status0 reg: processing normal RX mode")
+                        self.debug_log("read_rx_wwvb_device: status0 reg: processing normal RX mode")
                         year_reg = self.decode_bcd_byte(self.read_wwvb_device(es100_wwvb.ES100_YEAR_REG), offset = 2000)
                         month_reg = self.decode_bcd_byte(self.read_wwvb_device(es100_wwvb.ES100_MONTH_REG))
                         day_reg = self.decode_bcd_byte(self.read_wwvb_device(es100_wwvb.ES100_DAY_REG))
@@ -675,7 +685,7 @@ class es100_wwvb:
                         # FIXME: add this forcing after the code below which resets force full rx
                         #
                         if abs(wwvb_delta_rx) > 0.200:
-                                print("read_rx_wwvb_device: clock offset in full rx mode exceeds 200 ms, forcing full RX")
+                                self.debug_log("read_rx_wwvb_device: clock offset in full rx mode exceeds 200 ms, forcing full RX")
                                 self.force_full_rx = True
 
                 wwvb_time_txt = self.make_utc_s(wwvb_time_secs)
@@ -698,17 +708,17 @@ class es100_wwvb:
                 # adjust for great circle distance from Ft Collins
                 #
                 distance_delay = (self.KILOMETERS_FROM_FTCOLLINS_CO * 1.0) / (es100_wwvb.SPEED_OF_LIGHT_OVERLAND * 1.0)
-                print("read_rx_wwvb_device: RX              = " + self.make_timespec_s(rx_timestamp))
-                print("read_rx_wwvb_device: adjusting rx_timestamp for distance_delay = " + str(distance_delay))
+                self.debug_log("read_rx_wwvb_device: RX              = " + self.make_timespec_s(rx_timestamp))
+                self.debug_log("read_rx_wwvb_device: adjusting rx_timestamp for distance_delay = " + str(distance_delay))
                 rx_timestamp = rx_timestamp - distance_delay
                 #
                 # wwvb_delta_rx is the phase error (offset error)
                 #
                 wwvb_delta_rx = wwvb_time_secs - rx_timestamp
-                print("read_rx_wwvb_device: WWVB_TIME       = " + self.make_timespec_s(wwvb_time_secs))
-                print("read_rx_wwvb_device: WWVB_TIME       = " + wwvb_time_txt)
-                print("read_rx_wwvb_device: RX              = " + self.make_timespec_s(rx_timestamp))
-                print("read_rx_wwvb_device: WWWB_DELTA_RX   = " + self.make_timespec_s(wwvb_delta_rx))
+                self.debug_log("read_rx_wwvb_device: WWVB_TIME       = " + self.make_timespec_s(wwvb_time_secs))
+                self.debug_log("read_rx_wwvb_device: WWVB_TIME       = " + wwvb_time_txt)
+                self.debug_log("read_rx_wwvb_device: RX              = " + self.make_timespec_s(rx_timestamp))
+                self.debug_log("read_rx_wwvb_device: WWWB_DELTA_RX   = " + self.make_timespec_s(wwvb_delta_rx))
 
                 # machine readable line for automated parsing and analysis
                 # no other text printed by this tool begins with RX_WWVB
@@ -718,16 +728,16 @@ class es100_wwvb:
                 if self.force_full_rx is True:
                         self.force_full_rx = False
                         self.last_full_rx_tstamp = rx_timestamp
-                        print("read_rx_wwvb_device: reset last_full_rx_tstamp to " + str(self.last_full_rx_tstamp) + ", force_full_rx to False")
+                        self.debug_log("read_rx_wwvb_device: reset last_full_rx_tstamp to " + str(self.last_full_rx_tstamp) + ", force_full_rx to False")
                 #
                 # update NTP SHM segment.
                 # FIXME: forking external code is butt-ugly
                 # FIXME: should use subprocess.popen
                 #
                 update_shm_cmd = "./update_shm_one_shot " + self.make_timespec_s(wwvb_time_secs) + " " + self.make_timespec_s(rx_timestamp)
-                print("read_rx_wwvb_device: update_shm_cmd = " + update_shm_cmd)
+                self.debug_log("read_rx_wwvb_device: update_shm_cmd = " + update_shm_cmd)
                 ret = os.system(update_shm_cmd)
-                print("read_rx_wwvb_device: update_shm_cmd ret code = " + str(ret))
+                self.debug_log("read_rx_wwvb_device: update_shm_cmd ret code = " + str(ret))
                 #
                 # that's all folks!
                 #
@@ -738,44 +748,44 @@ class es100_wwvb:
                 #
                 if self.force_rx_params != 0:
                         if self.force_rx_params == es100_wwvb.ES100_CONTROL_START_RX_ANT1:
-                                print("__rx_wwvb_select_antenna: force_rx_params set to ANT1, using antenna ANT1 for next RX")
+                                self.debug_log("__rx_wwvb_select_antenna: force_rx_params set to ANT1, using antenna ANT1 for next RX")
                                 return es100_wwvb.ES100_CONTROL_START_RX_ANT1
                         else:
                                 #
                                 # silently ignore invalid self.force_rx_params
                                 #
-                                print("__rx_wwvb_select_antenna: force_rx_params set to ANT2, using antenna ANT2 for next RX")
+                                self.debug_log("__rx_wwvb_select_antenna: force_rx_params set to ANT2, using antenna ANT2 for next RX")
                                 return es100_wwvb.ES100_CONTROL_START_RX_ANT2
                 #
                 # RX OK ANTENNA 1
                 #
                 if rx_ret == es100_wwvb.RX_STATUS_WWVB_RX_OK_ANT1:
-                        print("__rx_wwvb_select_antenna: rx ok, using same antenna ANT1 for next RX")
+                        self.debug_log("__rx_wwvb_select_antenna: rx ok, using same antenna ANT1 for next RX")
                         return es100_wwvb.ES100_CONTROL_START_RX_ANT1
                 #
                 # RX OK ANTENNA 2
                 #
                 if rx_ret == es100_wwvb.RX_STATUS_WWVB_RX_OK_ANT2:
-                        print("__rx_wwvb_select_antenna: rx ok, using same antenna ANT2 for next RX")
+                        self.debug_log("__rx_wwvb_select_antenna: rx ok, using same antenna ANT2 for next RX")
                         return es100_wwvb.ES100_CONTROL_START_RX_ANT2
                 #
                 # RX FAILED
                 #
                 if rx_params == es100_wwvb.ES100_CONTROL_START_RX_ANT1:
-                        print("__rx_wwvb_select_antenna: RX FAILED on antenna ANT1: using antenna ANT2 for next RX")
+                        self.debug_log("__rx_wwvb_select_antenna: RX FAILED on antenna ANT1: using antenna ANT2 for next RX")
                         return es100_wwvb.ES100_CONTROL_START_RX_ANT2
                 else:
-                        print("__rx_wwvb_select_antenna: RX FAILED on antenna ANT2: using antenna ANT1 for next RX")
+                        self.debug_log("__rx_wwvb_select_antenna: RX FAILED on antenna ANT2: using antenna ANT1 for next RX")
                         return es100_wwvb.ES100_CONTROL_START_RX_ANT1
         def rx_wwvb_select_antenna(self, rx_ret, rx_params):
                 rx_params = self.__rx_wwvb_select_antenna(rx_ret, rx_params)
                 self.check_night_time_full_rx_ftcollins()
                 if self.ALLOW_RX_TRACKING_MODE is True and self.force_full_rx is False:
                         if rx_params == es100_wwvb.ES100_CONTROL_START_RX_ANT1:
-                                print("rx_wwvb_select_antenna: tracking mode allowed and full rx not needed, switching to tracking mode on ANT1")
+                                self.debug_log("rx_wwvb_select_antenna: tracking mode allowed and full rx not needed, switching to tracking mode on ANT1")
                                 return es100_wwvb.ES100_CONTROL_START_TRACKING_RX_ANT1
                         else:
-                                print("rx_wwvb_select_antenna: tracking mode allowed and full rx not needed, switching to tracking mode on ANT2")
+                                self.debug_log("rx_wwvb_select_antenna: tracking mode allowed and full rx not needed, switching to tracking mode on ANT2")
                                 return es100_wwvb.ES100_CONTROL_START_TRACKING_RX_ANT2
                 return rx_params
         #
@@ -788,7 +798,7 @@ class es100_wwvb:
                 #
                 ret = self.init_wwvb_device()
                 if ret != 0:
-                        print("get_timestamp_from_wwvb_device: ERROR: failed to initialize ES100 device")
+                        self.notice_log("get_timestamp_from_wwvb_device: ERROR: failed to initialize ES100 device")
                         self.disable_wwvb_device(deep_disable = True)
                         self.wwvb_emit_clockstats(es100_wwvb.RX_STATUS_WWVB_DEV_INIT_FAILED, 0, time.time())
                         self.next_rx_params = self.rx_wwvb_select_antenna(es100_wwvb.RX_STATUS_WWVB_DEV_INIT_FAILED, rx_params)
@@ -797,9 +807,9 @@ class es100_wwvb:
                 #
                 #
                 #
-                print("get_timestamp_from_wwvb_device: rx_params = " + self.str0x(rx_params))
+                self.debug_log("get_timestamp_from_wwvb_device: rx_params = " + self.str0x(rx_params))
                 if (rx_params & es100_wwvb.ES100_CONTROL_START_TRACKING_RX_FLAG) != 0:
-                        print("get_timestamp_from_wwvb_device: tracking mode requested, waiting until :54 before issuing command")
+                        self.debug_log("get_timestamp_from_wwvb_device: tracking mode requested, waiting until :54 before issuing command")
                         while (time.time() % 60) < 54:
                                 #print "get_timestamp_from_wwvb_device: second offset is :" + str(time.time() % 60) + ", waiting"
                                 time.sleep(0.500)
@@ -812,7 +822,7 @@ class es100_wwvb:
                 #
                 rx_timestamp = self.wait_rx_wwvb_device(prev_pps_stamp)
                 if rx_timestamp < 0:
-                        print("get_timestamp_from_wwvb_device: rx operation timeout at " + str(time.time()))
+                        self.notice_log("get_timestamp_from_wwvb_device: rx operation timeout at " + str(time.time()))
                         self.disable_wwvb_device()
                         self.wwvb_emit_clockstats(es100_wwvb.RX_STATUS_WWVB_TIMEOUT, 0, time.time())
                         self.next_rx_params = self.rx_wwvb_select_antenna(es100_wwvb.RX_STATUS_WWVB_TIMEOUT, rx_params)
@@ -820,8 +830,8 @@ class es100_wwvb:
                 #
                 # RX COMPLETE, READ DATETIME TIMESTAMP FROM EVERSET WWVB RECEIVER
                 #
-                print("get_timestamp_from_wwvb_device: rx operation complete: " + self.make_timespec_s(rx_timestamp))
-                print("get_timestamp_from_wwvb_device: rx operation complete: " + str(rx_timestamp % 60) + " (minute offset)")
+                self.notice_log("get_timestamp_from_wwvb_device: rx operation complete: " + self.make_timespec_s(rx_timestamp))
+                self.notice_log("get_timestamp_from_wwvb_device: rx operation complete: " + str(rx_timestamp % 60) + " (second offset)")
                 rx_ret = self.read_rx_wwvb_device(rx_params, rx_timestamp)
                 self.disable_wwvb_device()
                 #
