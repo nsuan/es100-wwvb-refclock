@@ -1,4 +1,4 @@
-#!/usr/bin/python -u
+#!/usr/bin/python3 -u
 #vim: tabstop=8 expandtab shiftwidth=8 softtabstop=8
 
 #
@@ -41,7 +41,12 @@ import smbus
 import time
 import sys
 import os
+import syslog
+
+from datetime import datetime
 from ppsapi import ppsapi
+from threading import Thread
+from queue import Queue
 
 #
 # FIXME: the code currently uses python floating point to store timespec values.
@@ -155,8 +160,13 @@ class es100_wwvb:
         def __init__(self, allow_tracking_mode = False, force_rx_params = 0, distance_from_ftcollins_co=1568, debug=False):
                 self.ALLOW_RX_TRACKING_MODE = allow_tracking_mode
                 self.KILOMETERS_FROM_FTCOLLINS_CO = distance_from_ftcollins_co
+                
+                #init logging
                 self.DEBUG_PRINT = debug
-
+                self.queue = Queue()
+                self.printer_thread = Thread(target=self.printer, daemon=True, name='Printer')
+                self.printer_thread.start()
+                
                 self.debug_log("__init__: self.ALLOW_RX_TRACKING_MODE = " + str(self.ALLOW_RX_TRACKING_MODE))
                 GPIO.setwarnings(False)
                 self.debug_log("__init__: opening i2c bus channel = " + str(es100_wwvb.I2C_DEV_CHANNEL))
@@ -201,14 +211,18 @@ class es100_wwvb:
                 # last full rx
                 #
                 self.last_full_rx_tstamp = 0
-                self.debug_log("__init__: done")
+                self.notice_log("started up")
+        def printer(self):
+                while True:
+                        message = self.queue.get()
+                        self.queue.put(message)
+                        
         def debug_log(self, message):
-                # TODO: move this into a thread 
+                syslog.syslog(syslog.LOG_DEBUG, message)
                 if self.DEBUG_PRINT:
-                        print(message)
+                        self.queue.put(message)
         def notice_log(self, message):
-                # TODO: move this into a thread 
-                print(message)
+                syslog.syslog(syslog.LOG_NOTICE, message)
         def make_timespec_s(self, timestamp):
                 return "{0:09.09f}".format(timestamp)
         def make_timefrac_s(self, timestamp):
@@ -351,7 +365,7 @@ class es100_wwvb:
                         #
                         # non recoverable
                         #
-                        self.debug_log("init_gpio_pins: FATAL ERROR: function I2C_SCL_PIN is not GPIO.I2C")
+                        self.notice_log("init_gpio_pins: FATAL ERROR: function I2C_SCL_PIN is not GPIO.I2C")
                         exit(1)
                 func = GPIO.gpio_function(self.GPIO_DEV_I2C_SDA_PIN)
                 self.debug_log("init_gpio_pins: func I2C_SDA_PIN = " + str(func) + "/" + str(GPIO.I2C))
@@ -359,7 +373,7 @@ class es100_wwvb:
                         #
                         # non recoverable
                         #
-                        self.debug_log("init_gpio_pins: FATAL ERROR: function I2C_SDA_PIN is not GPIO.I2C")
+                        self.notice_log("init_gpio_pins: FATAL ERROR: function I2C_SDA_PIN is not GPIO.I2C")
                         exit(1)
                 #
                 # make sure IRQ is low
@@ -386,14 +400,14 @@ class es100_wwvb:
                 es100_slave_addr_val = self.smbus.read_byte(es100_wwvb.ES100_SLAVE_ADDR)
                 self.debug_log("init_wwvb_device: es100_slave_addr_val = " + self.str0x(es100_slave_addr_val))
                 if es100_slave_addr_val != es100_wwvb.ES100_SLAVE_ADDR_VAL:
-                        self.debug_log("init_wwvb_device: ERROR: invalid ES100 es100_slave_addr_val")
+                        self.notice_log("init_wwvb_device: ERROR: invalid ES100 es100_slave_addr_val")
                         return -1
                 #
                 time.sleep(0.100)
                 val = self.read_wwvb_device(es100_wwvb.ES100_DEVICE_ID_REG)
                 self.debug_log("init_wwvb_device: es100_device_id = " + self.str0x(val))
                 if val != es100_wwvb.ES100_DEVICE_ID:
-                        self.debug_log("init_wwvb_device: ERROR: invalid ES100 device_id")
+                        self.notice_log("init_wwvb_device: ERROR: invalid ES100 device_id")
                         return -1
                 #
                 # don't check irq_status register, as it has side effects
@@ -401,17 +415,17 @@ class es100_wwvb:
                 val = self.read_wwvb_device(es100_wwvb.ES100_CONTROL0_REG)
                 self.debug_log("init_wwvb_device: control0 reg = " + self.str0x(val))
                 if val != 0:
-                        self.debug_log("init_wwvb_device: ERROR: invalid control0 reg")
+                        self.notice_log("init_wwvb_device: ERROR: invalid control0 reg")
                         return -1
                 val = self.read_wwvb_device(es100_wwvb.ES100_STATUS0_REG)
                 self.debug_log("init_wwvb_device: status0 reg = " + self.str0x(val))
                 if val != 0:
-                        self.debug_log("init_wwvb_device: ERROR: invalid status0 reg")
+                        self.notice_log("init_wwvb_device: ERROR: invalid status0 reg")
                         return -1
                 val = GPIO.input(self.GPIO_DEV_IRQ)
                 self.debug_log("init_wwvb_device: gpio_dev_irq pin = " + str(val))
                 if val != 1:
-                        self.debug_log("init_wwvb_device: ERROR: invalid gpio_dev_irq_pin")
+                        self.notice_log("init_wwvb_device: ERROR: invalid gpio_dev_irq_pin")
                         return -1
                 self.debug_log("init_wwvb_device: done initializing ES100 WWVB receiver")
                 return 0
@@ -481,6 +495,12 @@ class es100_wwvb:
         # initiate RX operation on WWVB device and return data
         #
         def start_rx_wwvb_device(self, rx_params):
+                self.debug_log("start_rx_wwvb_device: WWVB receive: RX starting")
+                now = datetime.now()
+                sec = now.second
+                if sec < 50 and (rx_params == es100_wwvb.ES100_CONTROL_START_RX_ANT1 or rx_params == es100_wwvb.ES100_CONTROL_START_RX_ANT2):
+                        time.sleep(50 - sec)
+
                 # FIXME: check input rx_params
                 if rx_params == es100_wwvb.ES100_CONTROL_START_RX_ANT1:
                         self.debug_log("start_rx_wwvb_device: WWVB receive: starting RX on antenna ANT1")
@@ -642,7 +662,8 @@ class es100_wwvb:
                         # ts can be :55 + ~24.5, +/-4s according to the datasheet and still be valid.
                         # :19.5 +/- 4 = :15 to :23:
                         if rx_timestamp_mod >= 15 and rx_timestamp_mod <= 24:
-                                if rx_timestamp_frac > .75 or rx_timestamp_frac < .25:
+                               # if rx_timestamp_frac > .75 or rx_timestamp_frac < .25:
+                                if rx_timestamp_frac > .90 or rx_timestamp_frac < .10:
                                         if rx_timestamp_frac > .75:
                                                 wwvb_time_secs = int(rx_timestamp + 1)
                                         else:
@@ -655,7 +676,10 @@ class es100_wwvb:
                                         self.debug_log("read_rx_wwvb_device: clock offset in tracking mode exceeds 250 ms, forcing full RX")
                                         self.disable_wwvb_device()
                                         self.wwvb_emit_clockstats(es100_wwvb.RX_STATUS_WWVB_T_STAMP_OORANGE, rx_ant, rx_timestamp)
-                                        self.force_full_rx = True
+                                        t = time.time()
+                                        if os.path.isfile('/tmp/ntp-sync') and  t > (self.last_full_rx_tstamp + es100_wwvb.NIGHT_TIME_RX_DAY_LENGTH):
+                                                self.force_full_rx = True
+
                                         return es100_wwvb.RX_STATUS_WWVB_T_STAMP_OORANGE
                 else:
                         rx_mode = "FULL"
